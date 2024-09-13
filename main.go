@@ -1,46 +1,57 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"log"
 	"net/http"
-	"os"
+	"time"
 
+	"github.com/google/uuid"
 	"github.com/gorilla/mux"
-	"github.com/jackc/pgx/v4"
-	"github.com/joho/godotenv"
 )
 
-var conn *pgx.Conn
+type Tender struct {
+	ID              uuid.UUID `json:"id"`
+	Name            string    `json:"name"`
+	Description     string    `json:"description"`
+	ServiceType     string    `json:"serviceType"`
+	Status          string    `json:"status"`
+	OrganizationID  int       `json:"organizationId"`
+	CreatorUsername string    `json:"creatorUsername"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
+}
+
+type Bid struct {
+	ID              uuid.UUID `json:"id"`
+	Name            string    `json:"name"`
+	Description     string    `json:"description"`
+	Status          string    `json:"status"`
+	TenderID        uuid.UUID `json:"tenderId"`
+	OrganizationID  int       `json:"organizationId"`
+	CreatorUsername string    `json:"creatorUsername"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
+}
+
+var tenders = make(map[uuid.UUID]Tender)
+var bids = make(map[uuid.UUID]Bid)
 
 func main() {
-	// Загрузка переменных окружения
-	err := godotenv.Load(".env")
-	if err != nil {
-		log.Fatalf("Error loading .env file")
-	}
-
-	// Подключение к PostgreSQL
-	postgresConn := os.Getenv("POSTGRES_CONN")
-	conn, err = pgx.Connect(context.Background(), postgresConn)
-	if err != nil {
-		log.Fatalf("Unable to connect to database: %v\n", err)
-	}
-	defer conn.Close(context.Background())
-
-	// Настройка HTTP сервера
-	serverAddress := os.Getenv("SERVER_ADDRESS")
 	router := mux.NewRouter()
-	router.HandleFunc("/api/ping", PingHandler).Methods("GET")
-	router.HandleFunc("/api/tenders", GetTendersHandler).Methods("GET")
-	router.HandleFunc("/api/tenders/new", CreateTenderHandler).Methods("POST")
 
-	log.Printf("Server is running at %s", serverAddress)
-	err = http.ListenAndServe(serverAddress, router)
-	if err != nil {
-		log.Fatalf("Failed to start server: %v", err)
-	}
+	// Эндпоинты для тендеров
+	router.HandleFunc("/api/ping", PingHandler).Methods("GET")
+	router.HandleFunc("/api/tenders", GetTenders).Methods("GET")
+	router.HandleFunc("/api/tenders/new", CreateTender).Methods("POST")
+	router.HandleFunc("/api/tenders/my", GetUserTenders).Methods("GET")
+	router.HandleFunc("/api/tenders/{tenderId}/edit", EditTender).Methods("PATCH")
+	router.HandleFunc("/api/tenders/{tenderId}/rollback/{version}", RollbackTender).Methods("PUT")
+
+	// Эндпоинты для предложений
+	router.HandleFunc("/api/bids/new", CreateBid).Methods("POST")
+
+	log.Fatal(http.ListenAndServe(":8080", router))
 }
 
 func PingHandler(w http.ResponseWriter, r *http.Request) {
@@ -48,66 +59,122 @@ func PingHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("ok"))
 }
 
-// Получение списка тендеров
-func GetTendersHandler(w http.ResponseWriter, r *http.Request) {
-	rows, err := conn.Query(context.Background(), "SELECT id, name, description FROM tenders")
-	if err != nil {
-		http.Error(w, "Failed to retrieve tenders", http.StatusInternalServerError)
-		return
-	}
-	defer rows.Close()
+func GetTenders(w http.ResponseWriter, r *http.Request) {
+	var tenderList []Tender
 
-	var tenders []map[string]interface{}
-
-	for rows.Next() {
-		var id, name, description string
-		err = rows.Scan(&id, &name, &description)
-		if err != nil {
-			http.Error(w, "Failed to scan tenders", http.StatusInternalServerError)
-			return
+	serviceType := r.URL.Query().Get("serviceType")
+	for _, tender := range tenders {
+		if serviceType == "" || tender.ServiceType == serviceType {
+			tenderList = append(tenderList, tender)
 		}
-		tenders = append(tenders, map[string]interface{}{
-			"id":          id,
-			"name":        name,
-			"description": description,
-		})
 	}
 
-	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(tenders)
+	json.NewEncoder(w).Encode(tenderList)
 }
 
-// Создание нового тендера
-func CreateTenderHandler(w http.ResponseWriter, r *http.Request) {
-	var tender struct {
-		Name            string `json:"name"`
-		Description     string `json:"description"`
-		ServiceType     string `json:"serviceType"`
-		OrganizationId  string `json:"organizationId"`
-		CreatorUsername string `json:"creatorUsername"`
-	}
-
+func CreateTender(w http.ResponseWriter, r *http.Request) {
+	var tender Tender
 	err := json.NewDecoder(r.Body).Decode(&tender)
 	if err != nil {
 		http.Error(w, "Invalid input", http.StatusBadRequest)
 		return
 	}
 
-	query := `INSERT INTO tenders (name, description, service_type, organization_id, creator_username)
-			  VALUES ($1, $2, $3, $4, $5) RETURNING id`
-	var id string
-	err = conn.QueryRow(context.Background(), query, tender.Name, tender.Description, tender.ServiceType, tender.OrganizationId, tender.CreatorUsername).Scan(&id)
+	tender.ID = uuid.New()
+	tender.Status = "Open"
+	tender.CreatedAt = time.Now()
+	tender.UpdatedAt = time.Now()
+
+	tenders[tender.ID] = tender
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(tender)
+}
+
+func GetUserTenders(w http.ResponseWriter, r *http.Request) {
+	username := r.URL.Query().Get("username")
+	var userTenders []Tender
+
+	for _, tender := range tenders {
+		if tender.CreatorUsername == username {
+			userTenders = append(userTenders, tender)
+		}
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(userTenders)
+}
+
+func EditTender(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	tenderID, err := uuid.Parse(vars["tenderId"])
 	if err != nil {
-		http.Error(w, "Failed to create tender", http.StatusInternalServerError)
+		http.Error(w, "Invalid tender ID", http.StatusBadRequest)
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
+	var updatedTender Tender
+	err = json.NewDecoder(r.Body).Decode(&updatedTender)
+	if err != nil {
+		http.Error(w, "Invalid input", http.StatusBadRequest)
+		return
+	}
+
+	tender, exists := tenders[tenderID]
+	if !exists {
+		http.Error(w, "Tender not found", http.StatusNotFound)
+		return
+	}
+
+	tender.Name = updatedTender.Name
+	tender.Description = updatedTender.Description
+	tender.UpdatedAt = time.Now()
+
+	tenders[tenderID] = tender
+
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{
-		"id":          id,
-		"name":        tender.Name,
-		"description": tender.Description,
-	})
+	json.NewEncoder(w).Encode(tender)
+}
+
+func RollbackTender(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	tenderID, err := uuid.Parse(vars["tenderId"])
+	if err != nil {
+		http.Error(w, "Invalid tender ID", http.StatusBadRequest)
+		return
+	}
+
+	version := vars["version"]
+	tender, exists := tenders[tenderID]
+	if !exists {
+		http.Error(w, "Tender not found", http.StatusNotFound)
+		return
+	}
+
+	tender.Name = tender.Name + " версия " + version
+
+	tenders[tenderID] = tender
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(tender)
+}
+
+func CreateBid(w http.ResponseWriter, r *http.Request) {
+	var bid Bid
+	err := json.NewDecoder(r.Body).Decode(&bid)
+	if err != nil {
+		http.Error(w, "Invalid input", http.StatusBadRequest)
+		return
+	}
+
+	// Генерация ID и сохранение предложения
+	bid.ID = uuid.New()
+	bid.CreatedAt = time.Now()
+	bid.UpdatedAt = time.Now()
+
+	bids[bid.ID] = bid
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(bid)
 }
