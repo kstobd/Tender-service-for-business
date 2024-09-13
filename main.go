@@ -19,6 +19,7 @@ import (
 
 var conn *pgx.Conn
 
+// проверяю, могу ли Я еще вносить изменения
 func runMigrations() {
 	log.Println("Starting database migrations...")
 
