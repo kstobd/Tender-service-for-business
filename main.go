@@ -9,21 +9,23 @@ import (
 	"os"
 	"time"
 
-	"github.com/golang-migrate/migrate"
-	"github.com/golang-migrate/migrate/database/postgres"
+	"github.com/golang-migrate/migrate/v4"
+	"github.com/golang-migrate/migrate/v4/database/postgres"
+	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
+
 	"github.com/gorilla/mux"
 	"github.com/jackc/pgx/v4"
 	"github.com/joho/godotenv"
+	_ "github.com/lib/pq"
 )
 
 var conn *pgx.Conn
 
-// проверяю, могу ли Я еще вносить изменения
 func runMigrations() {
 	log.Println("Starting database migrations...")
 
-	postgresConn := os.Getenv("POSTGRES_CONN")
+	postgresConn := os.Getenv("POSTGRES_CONN") + "?sslmode=disable"
 	db, err := sql.Open("postgres", postgresConn)
 	if err != nil {
 		log.Fatalf("Unable to connect to database: %v\n", err)
@@ -35,7 +37,7 @@ func runMigrations() {
 		log.Fatalf("Could not create postgres driver: %v", err)
 	}
 
-	m, err := migrate.NewWithDatabaseInstance("file://migrations", "postgres", driver)
+	m, err := migrate.NewWithDatabaseInstance("file://db/migrations", "postgres", driver)
 	if err != nil {
 		log.Fatalf("Could not create migration instance: %v", err)
 	}
