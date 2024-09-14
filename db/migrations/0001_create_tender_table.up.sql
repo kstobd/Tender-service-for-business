@@ -3,8 +3,9 @@ CREATE TABLE tender (
     name VARCHAR(100) NOT NULL,
     description TEXT NOT NULL,
     service_type VARCHAR(50) NOT NULL,
-    organization_id UUID REFERENCES organization(id) ON DELETE CASCADE,
-    creator_id UUID REFERENCES employee(id) ON DELETE CASCADE,
+    organization_id UUID REFERENCES organization(id) ON DELETE CASCADE,  -- связь с organization
+    creator_id UUID REFERENCES employee(id) ON DELETE CASCADE,  -- связь с employee
+    responsible_id UUID REFERENCES organization_responsible(id) ON DELETE CASCADE,  -- новая связь с ответственным
     status VARCHAR(20) NOT NULL CHECK (status IN ('CREATED', 'PUBLISHED', 'CLOSED')),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP

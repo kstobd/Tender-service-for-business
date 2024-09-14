@@ -145,6 +145,7 @@ func CreateTenderHandler(w http.ResponseWriter, r *http.Request) {
 		CreatorUsername string `json:"creatorUsername"`
 	}
 
+	// Декодирование тела запроса
 	err := json.NewDecoder(r.Body).Decode(&tender)
 	if err != nil {
 		log.Printf("CreateTenderHandler: Invalid input: %v", err)
@@ -152,6 +153,7 @@ func CreateTenderHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Получаем ID пользователя по его имени пользователя
 	var creatorID string
 	err = conn.QueryRow(context.Background(), "SELECT id FROM employee WHERE username = $1", tender.CreatorUsername).Scan(&creatorID)
 	if err != nil {
@@ -160,22 +162,37 @@ func CreateTenderHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Проверка, является ли пользователь ответственным за организацию
+	var responsibleID string
+	err = conn.QueryRow(context.Background(), `
+		SELECT id FROM organization_responsible
+		WHERE organization_id = $1 AND user_id = $2`, tender.OrganizationId, creatorID).Scan(&responsibleID)
+	if err != nil {
+		log.Printf("CreateTenderHandler: User is not responsible for this organization: %v", err)
+		http.Error(w, "User is not responsible for this organization", http.StatusForbidden)
+		return
+	}
+
+	// Вставка нового тендера
 	query := `INSERT INTO tender (name, description, service_type, organization_id, creator_id, status)
 			  VALUES ($1, $2, $3, $4, $5, 'CREATED') RETURNING id`
-	var id string
-	err = conn.QueryRow(context.Background(), query, tender.Name, tender.Description, tender.ServiceType, tender.OrganizationId, creatorID).Scan(&id)
+	var tenderID string
+	err = conn.QueryRow(context.Background(), query, tender.Name, tender.Description, tender.ServiceType, tender.OrganizationId, creatorID).Scan(&tenderID)
 	if err != nil {
 		log.Printf("CreateTenderHandler: Failed to create tender: %v", err)
 		http.Error(w, "Failed to create tender", http.StatusInternalServerError)
 		return
 	}
 
+	// Ответ успешного создания
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{
-		"id":          id,
+		"id":          tenderID,
 		"name":        tender.Name,
 		"description": tender.Description,
+		"serviceType": tender.ServiceType,
+		"status":      "CREATED",
 	})
 
 	log.Printf("CreateTenderHandler: Tender created successfully in %v", time.Since(start))
