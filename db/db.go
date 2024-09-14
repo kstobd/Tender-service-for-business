@@ -42,7 +42,7 @@ func Close() {
 func RunMigrations() {
 	log.Println("Starting database migrations...")
 
-	postgresConn := os.Getenv("POSTGRES_CONN") + "?sslmode=disable"
+	postgresConn := os.Getenv("POSTGRES_CONN")
 	Db, err := sql.Open("postgres", postgresConn)
 	if err != nil {
 		log.Fatalf("Unable to connect to database: %v", err)
