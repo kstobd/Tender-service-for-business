@@ -19,5 +19,6 @@ func SetupRoutes(router *mux.Router) {
 	router.HandleFunc("/api/bids/new", handlers.CreateBidHandler).Methods("POST")
 	router.HandleFunc("/api/bids/my", handlers.GetUserBidsHandler).Methods("GET")
 	router.HandleFunc("/api/bids/{tenderId}/list", handlers.GetBidsForTenderHandler).Methods("GET")
+	router.HandleFunc("/api/bids/{bidId}/submit_decision", handlers.SubmitBidDecisionHandler).Methods("PUT")
 
 }

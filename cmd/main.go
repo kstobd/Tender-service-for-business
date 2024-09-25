@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"os"
 
-	"avito-project/config"
 	"avito-project/db"
 	"avito-project/routes"
 
@@ -15,11 +14,13 @@ import (
 func main() {
 	log.Println("Starting server setup...")
 
-	// Загрузка переменных окружения
-	err := config.LoadEnv()
-	if err != nil {
-		log.Fatalf("Error loading .env file: %v", err)
-	}
+	// УБРАТЬ КОММЕНТИРОВАНИЕ, ЕСЛИ ИСПОЛЬЗВУЕТСЯ ФАЙЛ .env!!!!
+
+	// // Загрузка переменных окружения
+	// err := config.LoadEnv()
+	// if err != nil {
+	// 	log.Fatalf("Error loading .env file: %v", err)
+	// }
 
 	// Подключение к PostgreSQL
 	db.Connect()
@@ -34,7 +35,7 @@ func main() {
 	routes.SetupRoutes(router)
 
 	log.Printf("Server is running at %s", serverAddress)
-	err = http.ListenAndServe(serverAddress, router)
+	err := http.ListenAndServe(serverAddress, router)
 	if err != nil {
 		log.Fatalf("Failed to start server: %v", err)
 	}

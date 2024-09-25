@@ -343,3 +343,118 @@ func GetBidsForTenderHandler(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("GetBidsForTenderHandler: Successfully retrieved bids for tender %s in %v", tenderID, time.Since(start))
 }
+
+func SubmitBidDecisionHandler(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
+	log.Println("SubmitBidDecisionHandler: Processing decision submission")
+
+	// Получение параметра tenderId из URL path
+	bidID := r.URL.Path[len("/api/bids/") : len(r.URL.Path)-len("/submit_decision")]
+	if bidID == "" {
+		log.Println("SubmitBidDecisionHandler: Bid ID is required")
+		http.Error(w, "Bid ID is required", http.StatusBadRequest)
+		return
+	}
+
+	// Получение параметров из запроса
+	decision := r.URL.Query().Get("decision")
+	username := r.URL.Query().Get("username")
+
+	if decision == "" || username == "" {
+		log.Println("SubmitBidDecisionHandler: Missing required parameters")
+		http.Error(w, "Missing required parameters", http.StatusBadRequest)
+		return
+	}
+
+	// Валидация решения
+	if decision != "Approved" && decision != "Rejected" {
+		log.Printf("SubmitBidDecisionHandler: Invalid decision: %s", decision)
+		http.Error(w, "Invalid decision value", http.StatusBadRequest)
+		return
+	}
+
+	conn := db.GetConnection()
+
+	// Проверка существования пользователя
+	var userID string
+	err := conn.QueryRow(context.Background(), "SELECT id FROM employee WHERE username = $1", username).Scan(&userID)
+	if err != nil {
+		log.Printf("SubmitBidDecisionHandler: User not found: %v", err)
+		http.Error(w, "User not found", http.StatusUnauthorized)
+		return
+	}
+
+	// Проверка существования предложения
+	var currentBidStatus string
+	err = conn.QueryRow(context.Background(), "SELECT status FROM bids WHERE id = $1", bidID).Scan(&currentBidStatus)
+	if err != nil {
+		log.Printf("SubmitBidDecisionHandler: Bid not found: %v", err)
+		http.Error(w, "Bid not found", http.StatusNotFound)
+		return
+	}
+
+	// Проверка прав доступа
+	var isAuthorized bool
+	err = conn.QueryRow(context.Background(), `
+		SELECT EXISTS (
+			SELECT 1 FROM tender 
+			WHERE creator_id = $1 
+			AND id = (SELECT tender_id FROM bids WHERE id = $2)
+		)`, userID, bidID).Scan(&isAuthorized)
+	if err != nil || !isAuthorized {
+		log.Printf("SubmitBidDecisionHandler: User is not authorized to submit decision for this bid: %v", err)
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+
+	// Получаем tenderID
+	var tenderID string
+	err = conn.QueryRow(context.Background(), `
+		SELECT tender_id FROM bids
+		WHERE id = $1`, bidID).Scan(&tenderID)
+	if err != nil {
+		log.Printf("SubmitBidDecisionHandler: Tender not found: %v", err)
+		http.Error(w, "Tender not found", http.StatusForbidden)
+		return
+	}
+
+	// Если решение "Approved", закрываем тендер
+	if decision == "Approved" {
+		_, err = conn.Exec(context.Background(), `
+			UPDATE tender
+			SET status = 'CLOSED'
+			WHERE id = $1`, tenderID)
+		if err != nil {
+			log.Printf("SubmitBidDecisionHandler: Failed to close tender: %v", err)
+			http.Error(w, "Failed to close tender", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	// Возвращаем обновленные данные предложения
+	var bid struct {
+		ID          string    `json:"id"`
+		Name        string    `json:"name"`
+		Description string    `json:"description"`
+		Status      string    `json:"status"`
+		Version     int       `json:"version"`
+		CreatedAt   time.Time `json:"createdAt"`
+	}
+
+	err = conn.QueryRow(context.Background(), `
+		SELECT id, name, description, status, version, created_at
+		FROM bids
+		WHERE id = $1`, bidID).Scan(&bid.ID, &bid.Name, &bid.Description, &bid.Status, &bid.Version, &bid.CreatedAt)
+	if err != nil {
+		log.Printf("SubmitBidDecisionHandler: Failed to retrieve updated bid: %v", err)
+		http.Error(w, "Failed to retrieve updated bid", http.StatusInternalServerError)
+		return
+	}
+
+	// Ответ с данными обновленного предложения
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(bid)
+
+	log.Printf("SubmitBidDecisionHandler: Decision submitted successfully for bid %s in %v", bidID, time.Since(start))
+}

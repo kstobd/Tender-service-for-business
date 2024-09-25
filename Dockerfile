@@ -6,8 +6,8 @@ COPY . .
 
 RUN go mod tidy
 
-RUN go build -o main .
+RUN go build -o ./cmd/main ./cmd/main.go
 
 EXPOSE 8080
 
-CMD ["/app/main"]
+CMD ["/app/cmd/main"]

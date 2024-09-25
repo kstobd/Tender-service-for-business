@@ -6,21 +6,14 @@
 
 ### Предварительные требования
 
-- У вас должен быть файл `.env` с переменными окружения.
+- У вас должны быть установлены переменные окружения `SERVER_ADDRESS` и `POSTGRES_CONN` 
 - PostgreSQL база данных должна быть запущена по указанному адресу.
+- Гарантирована работа с Docker версии 20.10.12
 
 ### Переменные окружения
 
-Файл `.env` должен содержать следующие переменные:
-
 - `SERVER_ADDRESS` — Адрес и порт, на котором будет работать HTTP сервер. Пример: `0.0.0.0:8080`.
 - `POSTGRES_CONN` — URL-строка для подключения к PostgreSQL в формате `postgres://{username}:{password}@{host}:{5432}/{dbname}`.
-- `POSTGRES_JDBC_URL` — JDBC-строка для подключения к PostgreSQL в формате `jdbc:postgresql://{host}:{port}/{dbname}`.
-- `POSTGRES_USERNAME` — Имя пользователя для подключения к PostgreSQL.
-- `POSTGRES_PASSWORD` — Пароль для подключения к PostgreSQL.
-- `POSTGRES_HOST` — Хост для подключения к PostgreSQL (например, `localhost`).
-- `POSTGRES_PORT` — Порт для подключения к PostgreSQL (например, `5432`).
-- `POSTGRES_DATABASE` — Имя базы данных PostgreSQL, которую будет использовать приложение.
 
 ## Сборка и запуск проекта
 
@@ -33,7 +26,7 @@ sudo docker build -t avito_project .
 ### Запуск контейнера
 
 ```bash
-docker run -p 8080:8080 avito_project
+docker run -p 8080:8080 -e SERVER_ADDRESS -e POSTGRES_CONN avito_project
 ```
 
 ## Использование API
